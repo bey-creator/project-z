@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+build/
+.gradle/
+local.properties
+proguard/
+*.log
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IntelliJ/Android Studio
+*.iml
+.idea/
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
+
+# Keystore files
+*.jks
+*.keystore
+key.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build outputs (keep source, ignore generated)
+android/app/build/
+android/build/
+output/
+
+# Downloaded binaries (large files - built via GitHub Actions)
+# Uncomment if you don't want to commit local test binaries
+# android/app/src/main/assets/binaries/*
+# !android/app/src/main/assets/binaries/.gitkeep
+# android/app/src/main/assets/wordlists/*
+# !android/app/src/main/assets/wordlists/.gitkeep
+
+# Temp files
+*.tmp
+*.swp
+*.bak
+*~
+
+# VS Code
+.vscode/

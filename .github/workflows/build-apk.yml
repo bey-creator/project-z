@@ -1,0 +1,91 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      binaries_source:
+        description: 'Source of binaries'
+        required: true
+        default: 'artifact'
+        type: choice
+        options:
+          - artifact
+          - release
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download binaries artifact
+        if: github.event.inputs.binaries_source == 'artifact'
+        uses: actions/download-artifact@v4
+        with:
+          name: cyberlab-binaries
+          path: ./downloaded
+
+      - name: Download binaries from latest Release
+        if: github.event.inputs.binaries_source == 'release'
+        run: |
+          LATEST_RELEASE=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+          wget -q "https://github.com/${{ github.repository }}/releases/download/${LATEST_RELEASE}/cyberlab-binaries.zip" -O ./downloaded/cyberlab-binaries.zip
+
+      - name: Extract binaries to assets
+        run: |
+          unzip -o ./downloaded/cyberlab-binaries.zip -d ./temp_extract
+          mkdir -p android/app/src/main/assets/binaries
+          mkdir -p android/app/src/main/assets/wordlists
+          mkdir -p android/app/src/main/assets/python/tools_py
+          cp -r ./temp_extract/binaries/* android/app/src/main/assets/binaries/ 2>/dev/null || true
+          cp -r ./temp_extract/wordlists/* android/app/src/main/assets/wordlists/ 2>/dev/null || true
+          cp -r ./temp_extract/python_tools/* android/app/src/main/assets/python/tools_py/ 2>/dev/null || true
+          echo "Binaries extracted to assets"
+          ls -la android/app/src/main/assets/binaries/ | head -20
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberlab-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Upload to Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: apk-${{ github.run_number }}
+          name: CyberLab Pro APK ${{ github.run_number }}
+          files: android/app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

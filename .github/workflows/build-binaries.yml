@@ -1,0 +1,298 @@
+name: Build ARM64 Binaries
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+
+jobs:
+  build-binaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            cmake autoconf automake libtool pkg-config \
+            libssl-dev libpcap-dev libncurses5-dev libncursesw5-dev \
+            libsqlite3-dev zlib1g-dev flex bison texinfo \
+            unzip xz-utils p7zip-full wget curl git \
+            openjdk-17-jdk
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create output directories
+        run: |
+          mkdir -p output/binaries output/wordlists output/python_tools output/external
+
+      # ============================================
+      # Tier 1: Download pre-built ARM64 binaries
+      # ============================================
+      - name: Download pre-built ARM64 binaries
+        run: |
+          echo "Downloading pre-built ARM64 binaries..."
+
+          # nmap
+          wget -q "https://nmap.org/dist/nmap-7.94-linux-arm64.tar.bz2" -O /tmp/nmap.tar.bz2
+          tar -xjf /tmp/nmap.tar.bz2 -C /tmp/
+          cp /tmp/nmap-7.94/bin/nmap output/binaries/
+          cp /tmp/nmap-7.94/bin/ncat output/binaries/ 2>/dev/null || true
+          cp /tmp/nmap-7.94/bin/nping output/binaries/ 2>/dev/null || true
+
+          # hashcat
+          wget -q "https://hashcat.net/files/hashcat-6.2.6.7z" -O /tmp/hashcat.7z
+          7z x /tmp/hashcat.7z -o/tmp/hashcat/
+          cp /tmp/hashcat/hashcat-6.2.6/hashcat.bin output/binaries/hashcat
+
+          # frida-server
+          FRIDA_VERSION=$(curl -s https://api.github.com/repos/frida/frida/releases | grep -m1 '"tag_name"' | cut -d'"' -f4)
+          wget -q "https://github.com/frida/frida/releases/download/${FRIDA_VERSION}/frida-server-${FRIDA_VERSION}-android-arm64.xz" -O /tmp/frida.xz
+          xz -d /tmp/frida.xz
+          cp /tmp/frida-server-${FRIDA_VERSION}-android-arm64 output/binaries/frida-server
+
+          # jadx
+          JADX_VERSION=$(curl -s https://api.github.com/repos/skylot/jadx/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+          wget -q "https://github.com/skylot/jadx/releases/download/${JADX_VERSION}/jadx-${JADX_VERSION}.zip" -O /tmp/jadx.zip
+          unzip -o /tmp/jadx.zip -d output/binaries/jadx/
+
+          # apktool
+          wget -q "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar" -O output/binaries/apktool.jar
+
+          # exiftool
+          git clone --depth 1 https://github.com/exiftool/exiftool.git /tmp/exiftool
+          cp /tmp/exiftool/exiftool output/binaries/
+          cp -r /tmp/exiftool/lib output/binaries/exiftool_lib
+
+          # searchsploit
+          git clone --depth 1 https://github.com/offensive-security/exploitdb.git /tmp/exploitdb
+          cp /tmp/exploitdb/searchsploit output/binaries/
+          cp -r /tmp/exploitdb/files_csv.csv output/binaries/
+
+          # lynis
+          git clone --depth 1 https://github.com/CISOfy/lynis.git /tmp/lynis
+          cp /tmp/lynis/lynis output/binaries/
+
+          # rkhunter
+          git clone --depth 1 https://github.com/installation/rkhunter.git /tmp/rkhunter
+          cp /tmp/rkhunter/rkhunter output/binaries/
+
+          # foremost
+          wget -q "https://github.com/foremost/foremost/archive/refs/heads/master.zip" -O /tmp/foremost.zip
+          unzip -o /tmp/foremost.zip -d /tmp/
+          cd /tmp/foremost-master && make && cp foremost ../../output/binaries/
+
+          # steghide
+          git clone --depth 1 https://github.com/steghide/steghide.git /tmp/steghide
+          cd /tmp/steghide
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/tools/build/aarch64-toolchain.cmake
+          make -j$(nproc)
+          cp src/steghide ../../output/binaries/
+
+          # macchanger
+          git clone --depth 1 https://github.com/alobbs/macchanger.git /tmp/macchanger
+          cd /tmp/macchanger
+          ./configure --host=aarch64-linux-gnu
+          make -j$(nproc)
+          cp src/macchanger ../../output/binaries/
+
+          echo "Pre-built binaries downloaded."
+
+      # ============================================
+      # Tier 2: Cross-compile C tools for ARM64
+      # ============================================
+      - name: Cross-compile C tools
+        run: |
+          export CC=aarch64-linux-gnu-gcc
+          export CXX=aarch64-linux-gnu-g++
+          export CHOST=aarch64-linux-gnu
+
+          # aircrack-ng
+          git clone --depth 1 https://github.com/aircrack-ng/aircrack-ng.git /tmp/aircrack
+          cd /tmp/aircrack
+          autoreconf -i
+          ./configure --host=aarch64-linux-gnu --prefix=${{ github.workspace }}/output/binaries/aircrack_install
+          make -j$(nproc)
+          make install
+          cp ${{ github.workspace }}/output/binaries/aircrack_install/bin/* ${{ github.workspace }}/output/binaries/
+          cp ${{ github.workspace }}/output/binaries/aircrack_install/sbin/* ${{ github.workspace }}/output/binaries/
+
+          # john
+          git clone --depth 1 https://github.com/openwall/john.git /tmp/john
+          cd /tmp/john/src
+          ./configure --host=aarch64-linux-gnu --disable-openmp
+          make -j$(nproc)
+          cp ../run/john ${{ github.workspace }}/output/binaries/
+
+          # hydra
+          git clone --depth 1 https://github.com/vanhauser-thc/thc-hydra.git /tmp/hydra
+          cd /tmp/hydra
+          ./configure --host=aarch64-linux-gnu
+          make -j$(nproc)
+          cp hydra ${{ github.workspace }}/output/binaries/
+
+          # masscan
+          git clone --depth 1 https://github.com/robertdavidgraham/masscan.git /tmp/masscan
+          cd /tmp/masscan
+          make -j$(nproc) CC=aarch64-linux-gnu-gcc
+          cp bin/masscan ${{ github.workspace }}/output/binaries/
+
+          # tcpdump + libpcap
+          git clone --depth 1 https://github.com/the-tcpdump-group/libpcap.git /tmp/libpcap
+          cd /tmp/libpcap
+          ./configure --host=aarch64-linux-gnu --prefix=${{ github.workspace }}/output/binaries/tcpdump_install
+          make -j$(nproc)
+          make install
+          git clone --depth 1 https://github.com/the-tcpdump-group/tcpdump.git /tmp/tcpdump
+          cd /tmp/tcpdump
+          ./configure --host=aarch64-linux-gnu --prefix=${{ github.workspace }}/output/binaries/tcpdump_install
+          make -j$(nproc)
+          make install
+          cp ${{ github.workspace }}/output/binaries/tcpdump_install/sbin/* ${{ github.workspace }}/output/binaries/
+          cp ${{ github.workspace }}/output/binaries/tcpdump_install/bin/* ${{ github.workspace }}/output/binaries/
+
+          # dsniff (arpspoof)
+          git clone --depth 1 https://github.com/dunbar/cyberdsniff.git /tmp/dsniff
+          cd /tmp/dsniff
+          ./configure --host=aarch64-linux-gnu
+          make -j$(nproc)
+          cp arpspoof/arpspoof ${{ github.workspace }}/output/binaries/
+
+          echo "C tools cross-compiled."
+
+      # ============================================
+      # Tier 3: Cross-compile Go tools for ARM64
+      # ============================================
+      - name: Cross-compile Go tools
+        run: |
+          export GOOS=linux
+          export GOARCH=arm64
+          export CGO_ENABLED=1
+          export CC=aarch64-linux-gnu-gcc
+
+          # gobuster
+          git clone --depth 1 https://github.com/OJ/gobuster.git /tmp/gobuster
+          cd /tmp/gobuster
+          go build -o ${{ github.workspace }}/output/binaries/gobuster .
+
+          # ffuf
+          git clone --depth 1 https://github.com/ffuf/ffuf.git /tmp/ffuf
+          cd /tmp/ffuf
+          go build -o ${{ github.workspace }}/output/binaries/ffuf .
+
+          # cameradar
+          git clone --depth 1 https://github.com/Ullaakut/cameradar.git /tmp/cameradar
+          cd /tmp/cameradar
+          go build -o ${{ github.workspace }}/output/binaries/cameradar .
+
+          echo "Go tools cross-compiled."
+
+      # ============================================
+      # Tier 4: Bundle Python tool sources
+      # ============================================
+      - name: Bundle Python tool sources
+        run: |
+          mkdir -p output/python_tools
+
+          # Web tools
+          git clone --depth 1 https://github.com/sqlmapproject/sqlmap.git output/python_tools/sqlmap
+          git clone --depth 1 https://github.com/sullo/nikto.git output/python_tools/nikto
+          cp -r output/python_tools/nikto/program/* output/python_tools/nikto/ 2>/dev/null || true
+          git clone --depth 1 https://github.com/xmendez/wfuzz.git output/python_tools/wfuzz
+
+          # Device tools
+          git clone --depth 1 https://github.com/threat9/routersploit.git output/python_tools/routersploit
+
+          # OSINT tools
+          git clone --depth 1 https://github.com/soxoj/maigret.git output/python_tools/maigret
+          git clone --depth 1 https://github.com/megadose/holehe.git output/python_tools/holehe
+          git clone --depth 1 https://github.com/s0md3v/photon.git output/python_tools/photon
+          git clone --depth 1 https://github.com/instaloader/instaloader.git output/python_tools/instaloader
+          git clone --depth 1 https://github.com/JustAnotherArchivist/snscrape.git output/python_tools/snscrape
+          git clone --depth 1 https://github.com/khast3x/h8mail.git output/python_tools/h8mail
+          git clone --depth 1 https://github.com/Datalux/Osintgram.git output/python_tools/osintgram
+          git clone --depth 1 https://github.com/sundowndev/phoneinfoga.git output/python_tools/phoneinfoga
+
+          # Forensic tools
+          git clone --depth 1 https://github.com/volatilityfoundation/volatility.git output/python_tools/volatility
+
+          # Password tools
+          git clone --depth 1 https://github.com/blackploit/hash-identifier.git output/python_tools/hash-identifier
+          git clone --depth 1 https://github.com/digininja/cewl.git output/python_tools/cewl
+
+          # Wireless tools
+          git clone --depth 1 https://github.com/derv82/wifite.git output/python_tools/wifite
+          git clone --depth 1 https://github.com/v1s1t0r1sh3r3/airgeddon.git output/python_tools/airgeddon
+
+          # Network tools
+          git clone --depth 1 https://github.com/SecureAuthCorp/impacket.git output/python_tools/impacket
+
+          # Forensic
+          git clone --depth 1 https://github.com/ReFirmLabs/binwalk.git output/python_tools/binwalk
+
+          echo "Python tools bundled."
+
+      # ============================================
+      # Tier 5: Download wordlists
+      # ============================================
+      - name: Download wordlists
+        run: |
+          mkdir -p output/wordlists
+
+          wget -q "https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt" -O output/wordlists/rockyou.txt
+          wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10-million-password-list-top-100000.txt" -O output/wordlists/common_100k.txt
+          wget -q "https://raw.githubusercontent.com/hashcat/hashcat/master/rules/best64.rule" -O output/wordlists/best64.rule
+          wget -q "https://raw.githubusercontent.com/hashcat/hashcat/master/rules/dive.rule" -O output/wordlists/dive.rule
+
+          # Generate smaller wordlists for testing
+          head -n 10000 output/wordlists/rockyou.txt > output/wordlists/rockyou_10k.txt
+          echo "test" > output/wordlists/test.txt
+
+          echo "Wordlists downloaded."
+
+      # ============================================
+      # Package and upload artifact
+      # ============================================
+      - name: Package binaries
+        run: |
+          cd output
+          zip -r ../cyberlab-binaries.zip binaries/ wordlists/ python_tools/ external/
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberlab-binaries
+          path: cyberlab-binaries.zip
+          retention-days: 7
+
+      - name: Upload to Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: binaries-${{ github.run_number }}
+          name: ARM64 Binaries ${{ github.run_number }}
+          files: cyberlab-binaries.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
