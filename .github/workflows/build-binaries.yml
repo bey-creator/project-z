@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   download-prebuilt:
     runs-on: ubuntu-latest
@@ -20,59 +24,55 @@ jobs:
         run: |
           cd output/binaries
 
-          # nmap (official ARM64)
-          wget -q "https://nmap.org/dist/nmap-7.94-linux-arm64.tar.bz2" -O /tmp/nmap.tar.bz2 && \
-            tar -xjf /tmp/nmap.tar.bz2 -C /tmp/ && cp /tmp/nmap-7.94/bin/nmap . || true
+          download() {
+            local url="$1" dest="$2"
+            wget -q "$url" -O "$dest" 2>/dev/null || echo "  [!] Failed: $dest"
+          }
 
-          # hashcat (official ARM64)
-          wget -q "https://hashcat.net/files/hashcat-6.2.6.7z" -O /tmp/hc.7z && \
-            7z x /tmp/hc.7z -o/tmp/hc/ && cp /tmp/hc/hashcat-6.2.6/hashcat.bin hashcat || true
+          download "https://nmap.org/dist/nmap-7.94-linux-arm64.tar.bz2" /tmp/nmap.tar.bz2
+          [ -f /tmp/nmap.tar.bz2 ] && tar -xjf /tmp/nmap.tar.bz2 -C /tmp/ && cp /tmp/nmap-7.94/bin/nmap . 2>/dev/null || true
 
-          # frida-server (GitHub releases)
-          FRIDA=$(curl -s https://api.github.com/repos/frida/frida/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
-          wget -q "https://github.com/frida/frida/releases/download/$FRIDA/frida-server-${FRIDA}-android-arm64.xz" -O /tmp/frida.xz && \
-            xz -d /tmp/frida.xz && cp /tmp/frida-server-${FRIDA}-android-arm64 frida-server || true
+          download "https://hashcat.net/files/hashcat-6.2.6.7z" /tmp/hc.7z
+          [ -f /tmp/hc.7z ] && 7z x /tmp/hc.7z -o/tmp/hc/ 2>/dev/null && cp /tmp/hc/hashcat-6.2.6/hashcat.bin hashcat 2>/dev/null || true
 
-          # jadx (pre-built)
-          JADX=$(curl -s https://api.github.com/repos/skylot/jadx/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-          wget -q "https://github.com/skylot/jadx/releases/download/$JADX/jadx-${JADX}.zip" -O /tmp/jadx.zip && \
-            unzip -o /tmp/jadx.zip -d jadx/ || true
+          FRIDA=$(curl -s https://api.github.com/repos/frida/frida/releases/latest 2>/dev/null | grep -m1 '"tag_name"' | cut -d'"' -f4)
+          if [ -n "$FRIDA" ]; then
+            download "https://github.com/frida/frida/releases/download/$FRIDA/frida-server-${FRIDA}-android-arm64.xz" /tmp/frida.xz
+            [ -f /tmp/frida.xz ] && xz -d /tmp/frida.xz 2>/dev/null && cp /tmp/frida-server-${FRIDA}-android-arm64 frida-server 2>/dev/null || true
+          fi
 
-          # apktool (JAR)
-          wget -q "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar" -O apktool.jar || true
+          JADX=$(curl -s https://api.github.com/repos/skylot/jadx/releases/latest 2>/dev/null | grep '"tag_name"' | cut -d'"' -f4)
+          if [ -n "$JADX" ]; then
+            download "https://github.com/skylot/jadx/releases/download/$JADX/jadx-${JADX}.zip" /tmp/jadx.zip
+            [ -f /tmp/jadx.zip ] && unzip -o /tmp/jadx.zip -d jadx/ 2>/dev/null || true
+          fi
 
-          # exiftool (Perl)
-          wget -q "https://exiftool.org/Image-ExifTool-12.70.tar.gz" -O /tmp/et.tar.gz && \
-            tar -xzf /tmp/et.tar.gz -C /tmp/ && cp /tmp/Image-ExifTool-12.70/exiftool . && \
-            cp -r /tmp/Image-ExifTool-12.70/lib exiftool_lib || true
+          download "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar" apktool.jar
+          download "https://exiftool.org/Image-ExifTool-12.70.tar.gz" /tmp/et.tar.gz
+          [ -f /tmp/et.tar.gz ] && tar -xzf /tmp/et.tar.gz -C /tmp/ 2>/dev/null && cp /tmp/Image-ExifTool-12.70/exiftool . && cp -r /tmp/Image-ExifTool-12.70/lib exiftool_lib 2>/dev/null || true
 
-          # searchsploit
-          wget -q "https://gitlab.com/exploit-database/exploitdb/-/archive/main/exploitdb-main.tar.gz" -O /tmp/edb.tar.gz && \
-            tar -xzf /tmp/edb.tar.gz -C /tmp/ && cp /tmp/exploitdb-main/searchsploit . || true
+          download "https://gitlab.com/exploit-database/exploitdb/-/archive/main/exploitdb-main.tar.gz" /tmp/edb.tar.gz
+          [ -f /tmp/edb.tar.gz ] && tar -xzf /tmp/edb.tar.gz -C /tmp/ 2>/dev/null && cp /tmp/exploitdb-main/searchsploit . 2>/dev/null || true
 
-          # scripts (shell/perl)
           for tool in lynis rkhunter; do
-            wget -q "https://github.com/$tool/$tool/archive/refs/heads/master.tar.gz" -O /tmp/$tool.tar.gz && \
-              tar -xzf /tmp/$tool.tar.gz -C /tmp/ && cp /tmp/$tool-master/$tool . || true
+            download "https://github.com/$tool/$tool/archive/refs/heads/master.tar.gz" /tmp/$tool.tar.gz
+            [ -f /tmp/$tool.tar.gz ] && tar -xzf /tmp/$tool.tar.gz -C /tmp/ 2>/dev/null && cp /tmp/$tool-master/$tool . 2>/dev/null || true
           done
 
-          # foremost
-          wget -q "https://github.com/foremost/foremost/archive/refs/heads/master.tar.gz" -O /tmp/foremost.tar.gz && \
-            tar -xzf /tmp/foremost.tar.gz -C /tmp/ && cd /tmp/foremost-master && make && \
-            cp foremost ../../output/binaries/ || true
-
           chmod +x * 2>/dev/null || true
-          echo "Pre-built downloads complete"
+          echo "[✓] Pre-built downloads complete"
+          ls -la
 
       - name: Download wordlists
         continue-on-error: true
         run: |
           cd output/wordlists
-          wget -q "https://github.com/brannondorsey/naive-hashcat/releases/download/data/rockyou.txt" || true
-          wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10-million-password-list-top-100000.txt" -O common_100k.txt || true
-          wget -q "https://raw.githubusercontent.com/hashcat/hashcat/master/rules/best64.rule" || true
-          wget -q "https://raw.githubusercontent.com/hashcat/hashcat/master/rules/dive.rule" || true
-          echo "Wordlists downloaded"
+          wget -q "https://github.com/brannondorsey/naive-hashcat/releases/download/data" -O rockyou.txt 2>/dev/null || true
+          wget -q "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10-million-password-list-top-100000.txt" -O common_100k.txt 2>/dev/null || true
+          wget -q "https://raw.githubusercontent.com/hashcat/hashcat/master/rules/best64.rule" 2>/dev/null || true
+          wget -q "https://raw.githubusercontent.com/hashcat/hashcat/master/rules/dive.rule" 2>/dev/null || true
+          echo "[✓] Wordlists downloaded"
+          ls -la
 
       - name: Upload prebuilt artifact
         uses: actions/upload-artifact@v4
@@ -90,10 +90,10 @@ jobs:
 
       - name: Install cross-compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             build-essential cmake autoconf automake libtool \
-            libssl-dev libpcap-dev libncurses5-dev zlib1g-dev
+            libssl-dev libpcap-dev libncurses5-dev zlib1g-dev 2>/dev/null
 
       - name: Download prebuilt artifact
         uses: actions/download-artifact@v4
@@ -106,37 +106,32 @@ jobs:
         run: |
           export CC=aarch64-linux-gnu-gcc
           export CXX=aarch64-linux-gnu-g++
-          export CHOST=aarch64-linux-gnu
 
-          # aircrack-ng
-          cd /tmp
-          git clone --depth 1 https://github.com/aircrack-ng/aircrack-ng.git
-          cd aircrack-ng && autoreconf -i && \
-            ./configure --host=aarch64-linux-gnu && make -j$(nproc) && \
-            cp src/aircrack-ng ../../output/binaries/ || true
+          compile_tool() {
+            local name="$1" url="$2" build_cmd="$3"
+            echo "  [>] Building $name..."
+            cd /tmp
+            git clone --depth 1 "$url" "$name" 2>/dev/null || true
+            cd "$name" && eval "$build_cmd" 2>/dev/null && echo "  [✓] $name" || echo "  [✗] $name failed"
+          }
 
-          # john
-          cd /tmp && git clone --depth 1 https://github.com/openwall/john.git
-          cd john/src && ./configure --host=aarch64-linux-gnu --disable-openmp && \
-            make -j$(nproc) && cp ../run/john ../../output/binaries/ || true
+          compile_tool "aircrack-ng" "https://github.com/aircrack-ng/aircrack-ng.git" \
+            "autoreconf -i && ./configure --host=aarch64-linux-gnu && make -j$(nproc) && cp src/aircrack-ng ../../output/binaries/"
 
-          # hydra
-          cd /tmp && git clone --depth 1 https://github.com/vanhauser-thc/thc-hydra.git
-          cd thc-hydra && ./configure --host=aarch64-linux-gnu && \
-            make -j$(nproc) && cp hydra ../../output/binaries/ || true
+          compile_tool "john" "https://github.com/openwall/john.git" \
+            "cd src && ./configure --host=aarch64-linux-gnu --disable-openmp && make -j$(nproc) && cp ../run/john ../../output/binaries/"
 
-          # masscan
-          cd /tmp && git clone --depth 1 https://github.com/robertdavidgraham/masscan.git
-          cd masscan && make -j$(nproc) CC=aarch64-linux-gnu-gcc && \
-            cp bin/masscan ../../output/binaries/ || true
+          compile_tool "hydra" "https://github.com/vanhauser-thc/thc-hydra.git" \
+            "./configure --host=aarch64-linux-gnu && make -j$(nproc) && cp hydra ../../output/binaries/"
 
-          # dsniff (arpspoof)
-          cd /tmp && git clone --depth 1 https://github.com/dunbar/cyberdsniff.git dsniff
-          cd dsniff && ./configure --host=aarch64-linux-gnu && \
-            make -j$(nproc) && cp arpspoof/arpspoof ../../output/binaries/arpspoof || true
+          compile_tool "masscan" "https://github.com/robertdavidgraham/masscan.git" \
+            "make -j$(nproc) CC=aarch64-linux-gnu-gcc && cp bin/masscan ../../output/binaries/"
+
+          compile_tool "dsniff" "https://github.com/dunbar/cyberdsniff.git" \
+            "./configure --host=aarch64-linux-gnu && make -j$(nproc) && cp arpspoof/arpspoof ../../output/binaries/arpspoof"
 
           chmod +x ../../output/binaries/* 2>/dev/null || true
-          echo "C tools compiled"
+          echo "[✓] C tools compiled"
 
       - name: Upload compiled artifact
         uses: actions/upload-artifact@v4
@@ -164,23 +159,24 @@ jobs:
           path: output/
 
       - name: Cross-compile Go tools
+        continue-on-error: true
         run: |
           export GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc
 
-          # gobuster
-          cd /tmp && git clone --depth 1 https://github.com/OJ/gobuster.git
-          cd gobuster && go build -o ../../output/binaries/gobuster . || true
+          build_go() {
+            local name="$1" url="$2"
+            echo "  [>] Building $name..."
+            cd /tmp
+            git clone --depth 1 "$url" "$name" 2>/dev/null || true
+            cd "$name" && go build -o "../../output/binaries/$name" . 2>/dev/null && echo "  [✓] $name" || echo "  [✗] $name failed"
+          }
 
-          # ffuf
-          cd /tmp && git clone --depth 1 https://github.com/ffuf/ffuf.git
-          cd ffuf && go build -o ../../output/binaries/ffuf . || true
-
-          # cameradar
-          cd /tmp && git clone --depth 1 https://github.com/Ullaakut/cameradar.git
-          cd cameradar && go build -o ../../output/binaries/cameradar . || true
+          build_go "gobuster" "https://github.com/OJ/gobuster.git"
+          build_go "ffuf" "https://github.com/ffuf/ffuf.git"
+          build_go "cameradar" "https://github.com/Ullaakut/cameradar.git"
 
           chmod +x ../../output/binaries/* 2>/dev/null || true
-          echo "Go tools compiled"
+          echo "[✓] Go tools compiled"
 
       - name: Upload go artifact
         uses: actions/upload-artifact@v4
@@ -195,30 +191,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download prebuilt artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: prebuilt-binaries
-          path: output/
-
       - name: Clone Python tool sources
         continue-on-error: true
         run: |
           mkdir -p output/python_tools
 
-          for repo in \
-            "sqlmapproject/sqlmap" "sullo/nikto" "xmendez/wfuzz" \
-            "threat9/routersploit" "soxoj/maigret" "megadose/holehe" \
-            "s0md3v/photon" "instaloader/instaloader" "JustAnotherArchivist/snscrape" \
-            "khast3x/h8mail" "Datalux/Osintgram" "volatilityfoundation/volatility" \
-            "blackploit/hash-identifier" "digininja/cewl" "ReFirmLabs/binwalk" \
-            "derv82/wifite" "v1s1t0r1sh3r3/airgeddon" "SecureAuthCorp/impacket" \
-            "sundowndev/phoneinfoga"; do
-            name=$(echo "$repo" | cut -d'/' -f2)
-            git clone --depth 1 "https://github.com/$repo.git" "output/python_tools/$name" || true
-          done
+          clone_tool() {
+            local name="$1" url="$2"
+            echo "  [>] Cloning $name..."
+            git clone --depth 1 "$url" "output/python_tools/$name" 2>/dev/null && echo "  [✓] $name" || echo "  [✗] $name failed"
+          }
 
-          echo "Python tools bundled"
+          clone_tool "sqlmap" "https://github.com/sqlmapproject/sqlmap.git"
+          clone_tool "nikto" "https://github.com/sullo/nikto.git"
+          clone_tool "wfuzz" "https://github.com/xmendez/wfuzz.git"
+          clone_tool "routersploit" "https://github.com/threat9/routersploit.git"
+          clone_tool "maigret" "https://github.com/soxoj/maigret.git"
+          clone_tool "holehe" "https://github.com/megadose/holehe.git"
+          clone_tool "photon" "https://github.com/s0md3v/photon.git"
+          clone_tool "instaloader" "https://github.com/instaloader/instaloader.git"
+          clone_tool "snscrape" "https://github.com/JustAnotherArchivist/snscrape.git"
+          clone_tool "h8mail" "https://github.com/khast3x/h8mail.git"
+          clone_tool "osintgram" "https://github.com/Datalux/Osintgram.git"
+          clone_tool "volatility" "https://github.com/volatilityfoundation/volatility.git"
+          clone_tool "hash-identifier" "https://github.com/blackploit/hash-identifier.git"
+          clone_tool "cewl" "https://github.com/digininja/cewl.git"
+          clone_tool "binwalk" "https://github.com/ReFirmLabs/binwalk.git"
+          clone_tool "wifite" "https://github.com/derv82/wifite.git"
+          clone_tool "airgeddon" "https://github.com/v1s1t0r1sh3r3/airgeddon.git"
+          clone_tool "impacket" "https://github.com/SecureAuthCorp/impacket.git"
+          clone_tool "phoneinfoga" "https://github.com/sundowndev/phoneinfoga.git"
+
+          echo "[✓] Python tools bundled"
+          ls output/python_tools/
 
       - name: Upload python artifact
         uses: actions/upload-artifact@v4
@@ -233,75 +238,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download prebuilt artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: prebuilt-binaries
-          path: artifacts/prebuilt
-
-      - name: Download compiled artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: compiled-binaries
-          path: artifacts/compiled
-
-      - name: Download go artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: go-binaries
-          path: artifacts/go
-
-      - name: Download python artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: python-tools
-          path: artifacts/python
+          path: artifacts/
+          merge-multiple: true
 
       - name: Merge and package
         run: |
           mkdir -p final/binaries final/wordlists final/python_tools
 
-          # Merge all binaries (order matters: later overrides earlier)
-          cp -r artifacts/prebuilt/binaries/* final/binaries/ 2>/dev/null || true
-          cp -r artifacts/compiled/binaries/* final/binaries/ 2>/dev/null || true
-          cp -r artifacts/go/binaries/* final/binaries/ 2>/dev/null || true
+          # Merge everything
+          cp -r artifacts/binaries/* final/binaries/ 2>/dev/null || true
+          cp -r artifacts/wordlists/* final/wordlists/ 2>/dev/null || true
+          cp -r artifacts/python_tools/* final/python_tools/ 2>/dev/null || true
 
-          # Merge wordlists
-          cp -r artifacts/prebuilt/wordlists/* final/wordlists/ 2>/dev/null || true
-
-          # Merge python tools
-          cp -r artifacts/python/python_tools/* final/python_tools/ 2>/dev/null || true
-
-          # Set permissions
           chmod +x final/binaries/* 2>/dev/null || true
 
-          # List what we have
-          echo "=== Binaries ==="
-          ls final/binaries/ 2>/dev/null || echo "(none)"
-          echo "=== Wordlists ==="
-          ls final/wordlists/ 2>/dev/null || echo "(none)"
+          echo "=== Final contents ==="
+          echo "Binaries: $(ls final/binaries/ 2>/dev/null | wc -l)"
+          echo "Wordlists: $(ls final/wordlists/ 2>/dev/null | wc -l)"
+          echo "Python tools: $(ls final/python_tools/ 2>/dev/null | wc -l)"
 
-          # Create final package in repo root
           cd final
           zip -r "${{ github.workspace }}/cyberlab-binaries.zip" binaries/ wordlists/ python_tools/
           cd "${{ github.workspace }}"
 
-          echo "Package created:"
-          ls -lh cyberlab-binaries.zip
+          echo "[✓] Package created: $(ls -lh cyberlab-binaries.zip)"
 
       - name: Upload final artifact
         uses: actions/upload-artifact@v4
         with:
           name: cyberlab-binaries
-          path: ${{ github.workspace }}/cyberlab-binaries.zip
+          path: cyberlab-binaries.zip
           retention-days: 7
 
       - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         uses: softprops/action-gh-release@v1
         with:
           tag_name: binaries-${{ github.run_number }}
           name: ARM64 Binaries ${{ github.run_number }}
-          files: ${{ github.workspace }}/cyberlab-binaries.zip
+          files: cyberlab-binaries.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
