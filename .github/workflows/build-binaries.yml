@@ -233,29 +233,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download prebuilt artifact
         uses: actions/download-artifact@v4
         with:
-          path: artifacts/
+          name: prebuilt-binaries
+          path: artifacts/prebuilt
+
+      - name: Download compiled artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: compiled-binaries
+          path: artifacts/compiled
+
+      - name: Download go artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries
+          path: artifacts/go
+
+      - name: Download python artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-tools
+          path: artifacts/python
 
       - name: Merge and package
         run: |
           mkdir -p final/binaries final/wordlists final/python_tools
 
-          # Merge all binaries
-          cp -r artifacts/prebuilt-binaries/binaries/* final/binaries/ 2>/dev/null || true
-          cp -r artifacts/compiled-binaries/binaries/* final/binaries/ 2>/dev/null || true
-          cp -r artifacts/go-binaries/binaries/* final/binaries/ 2>/dev/null || true
+          # Merge all binaries (order matters: later overrides earlier)
+          cp -r artifacts/prebuilt/binaries/* final/binaries/ 2>/dev/null || true
+          cp -r artifacts/compiled/binaries/* final/binaries/ 2>/dev/null || true
+          cp -r artifacts/go/binaries/* final/binaries/ 2>/dev/null || true
 
           # Merge wordlists
-          cp -r artifacts/prebuilt-binaries/wordlists/* final/wordlists/ 2>/dev/null || true
+          cp -r artifacts/prebuilt/wordlists/* final/wordlists/ 2>/dev/null || true
 
           # Merge python tools
-          cp -r artifacts/python-tools/python_tools/* final/python_tools/ 2>/dev/null || true
+          cp -r artifacts/python/python_tools/* final/python_tools/ 2>/dev/null || true
+
+          # Set permissions
+          chmod +x final/binaries/* 2>/dev/null || true
 
           # Create final package
           cd final
           zip -r ../../cyberlab-binaries.zip binaries/ wordlists/ python_tools/
+
+          echo "Package created:"
+          ls -lh ../../cyberlab-binaries.zip
 
       - name: Upload final artifact
         uses: actions/upload-artifact@v4
