@@ -275,18 +275,25 @@ jobs:
           # Set permissions
           chmod +x final/binaries/* 2>/dev/null || true
 
-          # Create final package
+          # List what we have
+          echo "=== Binaries ==="
+          ls final/binaries/ 2>/dev/null || echo "(none)"
+          echo "=== Wordlists ==="
+          ls final/wordlists/ 2>/dev/null || echo "(none)"
+
+          # Create final package in repo root
           cd final
-          zip -r ../../cyberlab-binaries.zip binaries/ wordlists/ python_tools/
+          zip -r "${{ github.workspace }}/cyberlab-binaries.zip" binaries/ wordlists/ python_tools/
+          cd "${{ github.workspace }}"
 
           echo "Package created:"
-          ls -lh ../../cyberlab-binaries.zip
+          ls -lh cyberlab-binaries.zip
 
       - name: Upload final artifact
         uses: actions/upload-artifact@v4
         with:
           name: cyberlab-binaries
-          path: cyberlab-binaries.zip
+          path: ${{ github.workspace }}/cyberlab-binaries.zip
           retention-days: 7
 
       - name: Create Release
@@ -295,6 +302,6 @@ jobs:
         with:
           tag_name: binaries-${{ github.run_number }}
           name: ARM64 Binaries ${{ github.run_number }}
-          files: cyberlab-binaries.zip
+          files: ${{ github.workspace }}/cyberlab-binaries.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
